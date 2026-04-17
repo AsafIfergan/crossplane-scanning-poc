@@ -1,0 +1,37 @@
+# Mixed file: standalone resource + composition in same file
+apiVersion: database.aws.crossplane.io/v1beta1
+kind: RDSInstance
+metadata:
+  name: standalone-rds
+spec:
+  forProvider:
+    allocatedStorage: 50
+    dbInstanceClass: db.t3.medium
+    engine: mysql
+    region: us-west-2
+    storageEncrypted: true
+    storageType: gp2
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: app-infra
+spec:
+  compositeTypeRef:
+    apiVersion: myorg.example.com/v1alpha1
+    kind: AppInfra
+  resources:
+    - name: app-db
+      base:
+        apiVersion: database.aws.crossplane.io/v1beta1
+        kind: RDSInstance
+        metadata:
+          name: composed-app-db
+        spec:
+          forProvider:
+            allocatedStorage: 20
+            dbInstanceClass: db.t3.small
+            engine: postgres
+            region: us-west-2
+            storageEncrypted: false
+            storageType: gp2

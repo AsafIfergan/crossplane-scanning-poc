@@ -1,0 +1,17 @@
+# Upbound provider — modern provider format (upbound.io instead of crossplane.io)
+apiVersion: rds.aws.upbound.io/v1beta1
+kind: Instance
+metadata:
+  name: upbound-rds
+spec:
+  forProvider:
+    allocatedStorage: 50
+    dbInstanceClass: db.t3.medium
+    engine: mysql
+    region: us-west-2
+    engineVersion: "5.7"
+    storageEncrypted: false
+    storageType: gp2
+    skipFinalSnapshot: true
+  providerConfigRef:
+    name: default
