@@ -1,20 +1,23 @@
-package crossplane.aws.subnet_without_vpc_ref
+package wiz
 
+import data.generic.common as common_lib
 import data.generic.crossplane as cp_lib
 
-# Detect subnets that reference a VPC which exists in the same document
-# (demonstrates cross-resource correlation via associatedByRef)
-deny[result] {
-	subnet := input.resource.Subnet[subnetName]
+WizPolicy[result] {
+	document := input.document[i]
+	subnet := document.resource.Subnet[name]
 	vpcRefName := subnet.spec.forProvider.vpcIdRef.name
 
-	# Check that the referenced VPC actually exists
-	not input.resource.VPC[vpcRefName]
+	not document.resource.VPC[vpcRefName]
 
 	result := {
+		"documentId": document.id,
 		"resourceType": "Subnet",
-		"resourceName": cp_lib.getResourceName(subnet, subnetName),
-		"severity": "MEDIUM",
-		"message": sprintf("Subnet references VPC '%s' which is not defined in the scanned files", [vpcRefName]),
+		"resourceName": cp_lib.getResourceName(subnet, name),
+		"searchKey": sprintf("resource.Subnet[%s].spec.forProvider.vpcIdRef", [name]),
+		"issueType": "IncorrectValue",
+		"keyExpectedValue": sprintf("referenced VPC '%s' should exist", [vpcRefName]),
+		"keyActualValue": sprintf("referenced VPC '%s' is not defined in scanned files", [vpcRefName]),
+		"searchLine": common_lib.build_search_line(["resource", "Subnet", name, "spec", "forProvider", "vpcIdRef"], []),
 	}
 }
