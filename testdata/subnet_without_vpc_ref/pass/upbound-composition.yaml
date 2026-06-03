@@ -1,0 +1,33 @@
+# Composition with composed Upbound VPC + Subnet — Subnet references the composed VPC (pass).
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: upbound-composed-network
+spec:
+  compositeTypeRef:
+    apiVersion: network.example.org/v1alpha1
+    kind: CompositeUpboundNetwork
+  resources:
+    - name: vpc
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: VPC
+        metadata:
+          name: composed-upbound-vpc
+        spec:
+          forProvider:
+            region: us-east-1
+            cidrBlock: 10.0.0.0/16
+    - name: subnet
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Subnet
+        metadata:
+          name: composed-upbound-subnet
+        spec:
+          forProvider:
+            region: us-east-1
+            availabilityZone: us-east-1b
+            cidrBlock: 10.0.1.0/24
+            vpcIdRef:
+              name: composed-upbound-vpc

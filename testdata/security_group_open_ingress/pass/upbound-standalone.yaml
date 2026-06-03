@@ -1,0 +1,30 @@
+# Upbound provider-aws-ec2 — SecurityGroup + SecurityGroupIngressRule.
+# The rule's cidrIpv4 is restricted to a private CIDR (pass).
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: SecurityGroup
+metadata:
+  name: upbound-db-sg
+spec:
+  forProvider:
+    region: us-east-1
+    name: upbound-db-sg
+    description: Enable rds access from private subnets only
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: SecurityGroupIngressRule
+metadata:
+  name: upbound-db-ingress-private
+spec:
+  forProvider:
+    region: us-east-1
+    description: Allow Postgres from private CIDR
+    cidrIpv4: 10.0.0.0/8
+    fromPort: 5432
+    toPort: 5432
+    ipProtocol: tcp
+    securityGroupIdRef:
+      name: upbound-db-sg
+  providerConfigRef:
+    name: default

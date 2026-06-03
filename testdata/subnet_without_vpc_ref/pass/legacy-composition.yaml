@@ -1,0 +1,34 @@
+# Composition with a composed VPC and composed Subnet — Subnet references the
+# composed VPC by name (pass — the referenced VPC exists in the same input).
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: composed-network
+spec:
+  compositeTypeRef:
+    apiVersion: network.example.org/v1alpha1
+    kind: CompositeNetwork
+  resources:
+    - name: vpc
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: VPC
+        metadata:
+          name: composed-vpc
+        spec:
+          forProvider:
+            region: us-east-1
+            cidrBlock: 10.0.0.0/16
+    - name: subnet
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        metadata:
+          name: composed-subnet
+        spec:
+          forProvider:
+            region: us-east-1
+            availabilityZone: us-east-1b
+            cidrBlock: 10.0.1.0/24
+            vpcIdRef:
+              name: composed-vpc

@@ -1,0 +1,25 @@
+# Upbound provider-aws-ec2 — VPC + Subnet that references it (pass).
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: VPC
+metadata:
+  name: upbound-sample-vpc
+spec:
+  forProvider:
+    region: us-east-1
+    cidrBlock: 10.0.0.0/16
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: Subnet
+metadata:
+  name: upbound-sample-subnet
+spec:
+  forProvider:
+    region: us-east-1
+    availabilityZone: us-east-1b
+    cidrBlock: 10.0.1.0/24
+    vpcIdRef:
+      name: upbound-sample-vpc
+  providerConfigRef:
+    name: default

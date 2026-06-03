@@ -1,0 +1,23 @@
+# Provider packages whose CRDs are needed to validate testdata/ fixtures.
+# `crossplane resource validate` downloads these into --cache-dir on first run.
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: upbound-provider-aws-rds
+spec:
+  package: xpkg.upbound.io/upbound/provider-aws-rds:v1.10.0
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: upbound-provider-aws-ec2
+spec:
+  package: xpkg.upbound.io/upbound/provider-aws-ec2:v1.10.0
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: crossplane-contrib-provider-aws
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-aws:v0.58.0

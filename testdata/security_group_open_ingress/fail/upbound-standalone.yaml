@@ -1,0 +1,30 @@
+# Upbound provider-aws-ec2 — SecurityGroup + SecurityGroupIngressRule.
+# The rule's cidrIpv4 is 0.0.0.0/0 (fail).
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: SecurityGroup
+metadata:
+  name: upbound-web-sg
+spec:
+  forProvider:
+    region: us-east-1
+    name: upbound-web-sg
+    description: Public web tier
+  providerConfigRef:
+    name: default
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: SecurityGroupIngressRule
+metadata:
+  name: upbound-web-ingress-open
+spec:
+  forProvider:
+    region: us-east-1
+    description: Allow HTTP from anywhere
+    cidrIpv4: 0.0.0.0/0
+    fromPort: 80
+    toPort: 80
+    ipProtocol: tcp
+    securityGroupIdRef:
+      name: upbound-web-sg
+  providerConfigRef:
+    name: default

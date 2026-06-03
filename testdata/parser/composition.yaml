@@ -1,0 +1,38 @@
+# Generic Composition fixture for parser shape tests.
+# Exercises everything the parser should preserve verbatim: the Composition
+# wrapper, multiple composed resources, and patches.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: parser-fixture-composition
+spec:
+  compositeTypeRef:
+    apiVersion: example.org/v1alpha1
+    kind: CompositeFixture
+  resources:
+    - name: rds-instance
+      base:
+        apiVersion: database.aws.crossplane.io/v1beta1
+        kind: RDSInstance
+        metadata:
+          name: parser-composed-rds
+        spec:
+          forProvider:
+            allocatedStorage: 100
+            dbInstanceClass: db.r5.large
+            engine: postgres
+            region: us-east-1
+            storageEncrypted: true
+      patches:
+        - fromFieldPath: spec.parameters.storageGB
+          toFieldPath: spec.forProvider.allocatedStorage
+    - name: db-subnet-group
+      base:
+        apiVersion: database.aws.crossplane.io/v1beta1
+        kind: DBSubnetGroup
+        metadata:
+          name: parser-composed-subnet-group
+        spec:
+          forProvider:
+            region: us-east-1
+            description: Subnet group for RDS

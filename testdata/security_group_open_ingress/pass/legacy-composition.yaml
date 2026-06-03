@@ -1,0 +1,27 @@
+# Composition with a composed SecurityGroup — ingress restricted to private CIDR (pass)
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: app-network
+spec:
+  compositeTypeRef:
+    apiVersion: network.example.org/v1alpha1
+    kind: CompositeAppNetwork
+  resources:
+    - name: app-sg
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: SecurityGroup
+        metadata:
+          name: composed-app-sg
+        spec:
+          forProvider:
+            region: us-east-1
+            groupName: composed-app-sg
+            description: App tier — only intra-VPC traffic
+            ingress:
+              - fromPort: 443
+                toPort: 443
+                ipProtocol: tcp
+                ipRanges:
+                  - cidrIp: 10.0.0.0/16

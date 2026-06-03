@@ -1,0 +1,26 @@
+# Composition wrapping an Upbound Instance with storageEncrypted false (fail).
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: upbound-rds-cluster-unenc
+spec:
+  compositeTypeRef:
+    apiVersion: database.example.org/v1alpha1
+    kind: CompositePostgreSQLInstance
+  resources:
+    - name: rds-instance
+      base:
+        apiVersion: rds.aws.upbound.io/v1beta3
+        kind: Instance
+        metadata:
+          name: composed-upbound-rds-unenc
+        spec:
+          forProvider:
+            region: us-east-1
+            allocatedStorage: 100
+            instanceClass: db.r5.large
+            engine: postgres
+            engineVersion: "13.7"
+            storageEncrypted: false
+            storageType: gp3
+            skipFinalSnapshot: true

@@ -1,0 +1,27 @@
+# Composition with a composed SecurityGroup — ingress open to 0.0.0.0/0 (fail)
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: public-web-network
+spec:
+  compositeTypeRef:
+    apiVersion: network.example.org/v1alpha1
+    kind: CompositePublicWeb
+  resources:
+    - name: web-sg
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: SecurityGroup
+        metadata:
+          name: composed-web-sg
+        spec:
+          forProvider:
+            region: us-east-1
+            groupName: composed-web-sg
+            description: Public web tier
+            ingress:
+              - fromPort: 80
+                toPort: 80
+                ipProtocol: tcp
+                ipRanges:
+                  - cidrIp: 0.0.0.0/0

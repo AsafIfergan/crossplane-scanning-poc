@@ -1,0 +1,24 @@
+# Composition with a composed Subnet that references a VPC name not present in
+# the input (fail — VPC is not defined in the Composition or anywhere else).
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: orphan-composed-network
+spec:
+  compositeTypeRef:
+    apiVersion: network.example.org/v1alpha1
+    kind: CompositeOrphanNetwork
+  resources:
+    - name: subnet
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        metadata:
+          name: composed-orphan-subnet
+        spec:
+          forProvider:
+            region: us-east-1
+            availabilityZone: us-east-1b
+            cidrBlock: 10.0.1.0/24
+            vpcIdRef:
+              name: nonexistent-vpc

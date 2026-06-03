@@ -1,0 +1,17 @@
+# Standalone RDS instance — storageEncrypted is true (pass)
+apiVersion: database.aws.crossplane.io/v1beta1
+kind: RDSInstance
+metadata:
+  name: my-rds-encrypted
+spec:
+  forProvider:
+    allocatedStorage: 50
+    dbInstanceClass: db.t3.medium
+    engine: mysql
+    region: us-west-2
+    engineVersion: "5.7.33"
+    publiclyAccessible: false
+    storageEncrypted: true
+    storageType: gp2
+  providerConfigRef:
+    name: example

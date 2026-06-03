@@ -1,0 +1,23 @@
+# Composition with composed Upbound Subnet referencing a VPC not present anywhere (fail).
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: upbound-orphan-composed-network
+spec:
+  compositeTypeRef:
+    apiVersion: network.example.org/v1alpha1
+    kind: CompositeUpboundOrphanNetwork
+  resources:
+    - name: subnet
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Subnet
+        metadata:
+          name: composed-upbound-orphan-subnet
+        spec:
+          forProvider:
+            region: us-east-1
+            availabilityZone: us-east-1b
+            cidrBlock: 10.0.1.0/24
+            vpcIdRef:
+              name: nonexistent-upbound-vpc

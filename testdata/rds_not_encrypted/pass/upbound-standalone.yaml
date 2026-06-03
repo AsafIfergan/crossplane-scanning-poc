@@ -1,0 +1,17 @@
+# Upbound provider-aws-rds — Instance with storageEncrypted true (pass).
+apiVersion: rds.aws.upbound.io/v1beta3
+kind: Instance
+metadata:
+  name: upbound-rds-encrypted
+spec:
+  forProvider:
+    region: us-west-2
+    allocatedStorage: 50
+    instanceClass: db.t3.medium
+    engine: mysql
+    engineVersion: "5.7"
+    storageEncrypted: true
+    storageType: gp2
+    skipFinalSnapshot: true
+  providerConfigRef:
+    name: default

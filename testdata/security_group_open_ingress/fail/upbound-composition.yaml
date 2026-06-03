@@ -1,0 +1,37 @@
+# Composition with composed Upbound SG + ingress rule — cidrIpv4 is 0.0.0.0/0 (fail).
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: upbound-public-web-network
+spec:
+  compositeTypeRef:
+    apiVersion: network.example.org/v1alpha1
+    kind: CompositePublicWeb
+  resources:
+    - name: web-sg
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: SecurityGroup
+        metadata:
+          name: composed-upbound-web-sg
+        spec:
+          forProvider:
+            region: us-east-1
+            name: composed-upbound-web-sg
+            description: Public web tier
+    - name: web-ingress
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: SecurityGroupIngressRule
+        metadata:
+          name: composed-upbound-web-ingress
+        spec:
+          forProvider:
+            region: us-east-1
+            description: Allow HTTP from anywhere
+            cidrIpv4: 0.0.0.0/0
+            fromPort: 80
+            toPort: 80
+            ipProtocol: tcp
+            securityGroupIdRef:
+              name: composed-upbound-web-sg

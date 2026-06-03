@@ -36,77 +36,154 @@ func TestIsCrossplaneFile(t *testing.T) {
 	}
 }
 
-// --- Parsing + restructuring tests ---
+// --- Parser shape tests ---
+// The parser is a dumb YAML→JSON converter. Each YAML document is preserved
+// exactly as written; multi-doc files (--- separated) are split into a list.
 
 func TestParseStandaloneResources(t *testing.T) {
-	result, err := ParseFile("../testdata/standalone/aws-network.yaml")
+	result, err := ParseFile("../testdata/parser/multi-doc-standalone.yaml")
 	require.NoError(t, err)
+	require.Len(t, result.Documents, 5)
 
-	resourceMap, ok := result.Document["resource"].(map[string]any)
-	require.True(t, ok)
+	byName := indexByName(t, result.Documents)
+	require.Contains(t, byName, "sample-vpc")
+	assert.Equal(t, "VPC", byName["sample-vpc"]["kind"])
+	require.Contains(t, byName, "sample-subnet1")
+	require.Contains(t, byName, "sample-subnet2")
+	require.Contains(t, byName, "sample-cluster-sg")
+	require.Contains(t, byName, "db-security-group")
 
-	vpcs := resourceMap["VPC"].(map[string]any)
-	assert.Contains(t, vpcs, "sample-vpc")
-
-	subnets := resourceMap["Subnet"].(map[string]any)
-	assert.Contains(t, subnets, "sample-subnet1")
-	assert.Contains(t, subnets, "sample-subnet2")
-	assert.Len(t, subnets, 2)
-
-	sgs := resourceMap["SecurityGroup"].(map[string]any)
-	assert.Contains(t, sgs, "sample-cluster-sg")
-	assert.Contains(t, sgs, "db-security-group")
-
-	// Verify cross-resource reference preserved
-	subnet1 := subnets["sample-subnet1"].(map[string]any)
-	spec := subnet1["spec"].(map[string]any)
-	fp := spec["forProvider"].(map[string]any)
-	vpcRef := fp["vpcIdRef"].(map[string]any)
-	assert.Equal(t, "sample-vpc", vpcRef["name"])
+	// Cross-resource reference preserved as written
+	subnet1 := byName["sample-subnet1"]
+	fp := subnet1["spec"].(map[string]any)["forProvider"].(map[string]any)
+	assert.Equal(t, "sample-vpc", fp["vpcIdRef"].(map[string]any)["name"])
 }
 
 func TestParseComposition(t *testing.T) {
-	result, err := ParseFile("../testdata/composition/rds-composition.yaml")
+	result, err := ParseFile("../testdata/parser/composition.yaml")
 	require.NoError(t, err)
 
-	resourceMap := result.Document["resource"].(map[string]any)
+	// One document: the Composition wrapper itself, with nested resources intact.
+	require.Len(t, result.Documents, 1)
+	comp := result.Documents[0]
+	assert.Equal(t, "Composition", comp["kind"])
+	assert.Equal(t, "parser-fixture-composition", comp["metadata"].(map[string]any)["name"])
 
-	rds := resourceMap["RDSInstance"].(map[string]any)
-	assert.Contains(t, rds, "composed-rds")
+	resources := comp["spec"].(map[string]any)["resources"].([]any)
+	require.Len(t, resources, 2)
 
-	sg := resourceMap["DBSubnetGroup"].(map[string]any)
-	assert.Contains(t, sg, "composed-subnet-group")
+	first := resources[0].(map[string]any)
+	assert.Equal(t, "rds-instance", first["name"])
+	base := first["base"].(map[string]any)
+	assert.Equal(t, "RDSInstance", base["kind"])
+	assert.Equal(t, "parser-composed-rds", base["metadata"].(map[string]any)["name"])
 
-	_, hasComp := resourceMap["Composition"]
-	assert.False(t, hasComp, "Composition itself should not be in resource map")
+	// patches must survive — they were dropped under the old restructuring.
+	assert.NotEmpty(t, first["patches"].([]any))
 }
 
 func TestParseUpbound(t *testing.T) {
-	data, err := os.ReadFile("../testdata/upbound/aws-rds-upbound.yaml")
+	data, err := os.ReadFile("../testdata/parser/upbound.yaml")
 	require.NoError(t, err)
 	assert.True(t, IsCrossplaneFile(data))
 
-	result, err := ParseFile("../testdata/upbound/aws-rds-upbound.yaml")
+	result, err := ParseFile("../testdata/parser/upbound.yaml")
 	require.NoError(t, err)
+	require.Len(t, result.Documents, 1)
 
-	resourceMap := result.Document["resource"].(map[string]any)
-	instances := resourceMap["Instance"].(map[string]any)
-	assert.Contains(t, instances, "upbound-rds")
+	doc := result.Documents[0]
+	assert.Equal(t, "Instance", doc["kind"])
+	assert.Equal(t, "upbound-rds", doc["metadata"].(map[string]any)["name"])
 }
 
 func TestParseMixed(t *testing.T) {
-	result, err := ParseFile("../testdata/mixed/standalone-and-composition.yaml")
+	result, err := ParseFile("../testdata/parser/mixed.yaml")
 	require.NoError(t, err)
+	require.Len(t, result.Documents, 2)
 
-	resourceMap := result.Document["resource"].(map[string]any)
-	rds := resourceMap["RDSInstance"].(map[string]any)
+	standalone := result.Documents[0]
+	assert.Equal(t, "RDSInstance", standalone["kind"])
 
-	assert.Contains(t, rds, "standalone-rds")
-	assert.Contains(t, rds, "composed-app-db")
-	assert.Len(t, rds, 2)
+	comp := result.Documents[1]
+	assert.Equal(t, "Composition", comp["kind"])
+	composed := comp["spec"].(map[string]any)["resources"].([]any)[0].(map[string]any)["base"].(map[string]any)
+	assert.Equal(t, "RDSInstance", composed["kind"])
 }
 
-// --- End-to-end Rego policy tests (WizPolicy format) ---
+// --- End-to-end Rego policy tests ---
+//
+// Each rule has 8 cases: {pass, fail} × {standalone, composition} × {legacy, upbound}.
+// Pass cases assert no findings; fail cases assert at least one finding with the
+// required WizPolicy fields and the expected resourceType.
+
+type policyCase struct {
+	name         string
+	yamlPath     string
+	expectFail   bool
+	resourceType string // expected on every finding (kind under inspection differs per family)
+}
+
+func TestRegoPolicy_RDSNotEncrypted(t *testing.T) {
+	runPolicyCases(t, "../rego/rds_not_encrypted.rego", []policyCase{
+		{"pass/legacy-standalone", "../testdata/rds_not_encrypted/pass/legacy-standalone.yaml", false, "RDSInstance"},
+		{"pass/legacy-composition", "../testdata/rds_not_encrypted/pass/legacy-composition.yaml", false, "RDSInstance"},
+		{"pass/upbound-standalone", "../testdata/rds_not_encrypted/pass/upbound-standalone.yaml", false, "Instance"},
+		{"pass/upbound-composition", "../testdata/rds_not_encrypted/pass/upbound-composition.yaml", false, "Instance"},
+		{"fail/legacy-standalone", "../testdata/rds_not_encrypted/fail/legacy-standalone.yaml", true, "RDSInstance"},
+		{"fail/legacy-composition", "../testdata/rds_not_encrypted/fail/legacy-composition.yaml", true, "RDSInstance"},
+		{"fail/upbound-standalone", "../testdata/rds_not_encrypted/fail/upbound-standalone.yaml", true, "Instance"},
+		{"fail/upbound-composition", "../testdata/rds_not_encrypted/fail/upbound-composition.yaml", true, "Instance"},
+	})
+}
+
+func TestRegoPolicy_SecurityGroupOpenIngress(t *testing.T) {
+	// Legacy fails surface as SecurityGroup (inline ingress);
+	// Upbound fails surface as SecurityGroupIngressRule (separate top-level resource).
+	runPolicyCases(t, "../rego/security_group_open_ingress.rego", []policyCase{
+		{"pass/legacy-standalone", "../testdata/security_group_open_ingress/pass/legacy-standalone.yaml", false, "SecurityGroup"},
+		{"pass/legacy-composition", "../testdata/security_group_open_ingress/pass/legacy-composition.yaml", false, "SecurityGroup"},
+		{"pass/upbound-standalone", "../testdata/security_group_open_ingress/pass/upbound-standalone.yaml", false, "SecurityGroupIngressRule"},
+		{"pass/upbound-composition", "../testdata/security_group_open_ingress/pass/upbound-composition.yaml", false, "SecurityGroupIngressRule"},
+		{"fail/legacy-standalone", "../testdata/security_group_open_ingress/fail/legacy-standalone.yaml", true, "SecurityGroup"},
+		{"fail/legacy-composition", "../testdata/security_group_open_ingress/fail/legacy-composition.yaml", true, "SecurityGroup"},
+		{"fail/upbound-standalone", "../testdata/security_group_open_ingress/fail/upbound-standalone.yaml", true, "SecurityGroupIngressRule"},
+		{"fail/upbound-composition", "../testdata/security_group_open_ingress/fail/upbound-composition.yaml", true, "SecurityGroupIngressRule"},
+	})
+}
+
+func TestRegoPolicy_SubnetWithoutVPCRef(t *testing.T) {
+	runPolicyCases(t, "../rego/subnet_without_vpc_ref.rego", []policyCase{
+		{"pass/legacy-standalone", "../testdata/subnet_without_vpc_ref/pass/legacy-standalone.yaml", false, "Subnet"},
+		{"pass/legacy-composition", "../testdata/subnet_without_vpc_ref/pass/legacy-composition.yaml", false, "Subnet"},
+		{"pass/upbound-standalone", "../testdata/subnet_without_vpc_ref/pass/upbound-standalone.yaml", false, "Subnet"},
+		{"pass/upbound-composition", "../testdata/subnet_without_vpc_ref/pass/upbound-composition.yaml", false, "Subnet"},
+		{"fail/legacy-standalone", "../testdata/subnet_without_vpc_ref/fail/legacy-standalone.yaml", true, "Subnet"},
+		{"fail/legacy-composition", "../testdata/subnet_without_vpc_ref/fail/legacy-composition.yaml", true, "Subnet"},
+		{"fail/upbound-standalone", "../testdata/subnet_without_vpc_ref/fail/upbound-standalone.yaml", true, "Subnet"},
+		{"fail/upbound-composition", "../testdata/subnet_without_vpc_ref/fail/upbound-composition.yaml", true, "Subnet"},
+	})
+}
+
+func runPolicyCases(t *testing.T, policyPath string, cases []policyCase) {
+	t.Helper()
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			findings := evalCrossplanePolicy(t, c.yamlPath, policyPath)
+			if !c.expectFail {
+				assert.Empty(t, findings, "expected no findings")
+				return
+			}
+			require.NotEmpty(t, findings, "expected at least one finding")
+			for _, f := range findings {
+				finding := f.(map[string]any)
+				assertWizPolicyFields(t, finding)
+				assert.Equal(t, c.resourceType, finding["resourceType"])
+			}
+		})
+	}
+}
+
+// --- Test helpers ---
 
 // requiredWizPolicyFields are the fields every WizPolicy result must contain,
 // matching the validation in iacscanlib/scanner/test/queries_content_test.go.
@@ -120,96 +197,26 @@ var requiredWizPolicyFields = []string{
 	"resourceName",
 }
 
-func TestRegoPolicy_RDSNotEncrypted(t *testing.T) {
-	findings := evalCrossplanePolicy(t,
-		"../testdata/standalone/aws-rds.yaml",
-		"../rego/rds_not_encrypted.rego",
-	)
-	require.NotEmpty(t, findings, "should detect unencrypted RDS instance")
-
-	for _, f := range findings {
-		finding := f.(map[string]any)
-		assertWizPolicyFields(t, finding)
-		assert.Equal(t, "RDSInstance", finding["resourceType"])
-	}
-}
-
-func TestRegoPolicy_RDSNotEncrypted_Composition(t *testing.T) {
-	findings := evalCrossplanePolicy(t,
-		"../testdata/composition/rds-composition.yaml",
-		"../rego/rds_not_encrypted.rego",
-	)
-	require.NotEmpty(t, findings, "should detect unencrypted RDS extracted from Composition")
-
-	for _, f := range findings {
-		finding := f.(map[string]any)
-		assertWizPolicyFields(t, finding)
-		assert.Equal(t, "composed-rds", finding["resourceName"])
-	}
-}
-
-func TestRegoPolicy_SecurityGroupOpenIngress(t *testing.T) {
-	findings := evalCrossplanePolicy(t,
-		"../testdata/standalone/aws-network.yaml",
-		"../rego/security_group_open_ingress.rego",
-	)
-	require.Len(t, findings, 1, "should detect one SG with 0.0.0.0/0 ingress")
-
-	finding := findings[0].(map[string]any)
-	assertWizPolicyFields(t, finding)
-	assert.Equal(t, "SecurityGroup", finding["resourceType"])
-	assert.Equal(t, "sample-cluster-sg", finding["resourceName"])
-}
-
-func TestRegoPolicy_SubnetVPCRef_NoFinding(t *testing.T) {
-	findings := evalCrossplanePolicy(t,
-		"../testdata/standalone/aws-network.yaml",
-		"../rego/subnet_without_vpc_ref.rego",
-	)
-	assert.Empty(t, findings, "all subnets reference sample-vpc which exists — no findings expected")
-}
-
-func TestRegoPolicy_MixedStandaloneAndComposition(t *testing.T) {
-	findings := evalCrossplanePolicy(t,
-		"../testdata/mixed/standalone-and-composition.yaml",
-		"../rego/rds_not_encrypted.rego",
-	)
-	// standalone-rds has storageEncrypted: true → no findings
-	// composed-app-db has storageEncrypted: false → findings
-	require.NotEmpty(t, findings)
-
-	for _, f := range findings {
-		finding := f.(map[string]any)
-		assertWizPolicyFields(t, finding)
-		assert.Equal(t, "composed-app-db", finding["resourceName"],
-			"findings should only be for the unencrypted composed resource")
-	}
-}
-
-// --- Test helpers ---
-
 // evalCrossplanePolicy simulates the full Wiz IaC scanning flow:
-// 1. Read raw Crossplane YAML file
-// 2. Parse + restructure into Terraform-like document
-// 3. Wrap in input.document[] (as the Wiz engine does via Combine())
+// 1. Read raw Crossplane YAML
+// 2. Parse into raw documents
+// 3. Wrap each doc as its own input.document[] entry, with id + file
 // 4. Evaluate WizPolicy Rego rules via OPA
 // 5. Return findings
 func evalCrossplanePolicy(t *testing.T, yamlPath, policyPath string) []any {
 	t.Helper()
 
-	// Step 1-2: Parse and restructure
 	result, err := ParseFile(yamlPath)
 	require.NoError(t, err)
 
-	// Step 3: Wrap in input.document[] — this is what the Wiz engine does
-	// via FileMetadatas.Combine(). Each document gets an id and file path.
-	result.Document["id"] = uuid.New().String()
-	result.Document["file"] = result.FilePath
-	input := map[string]any{
-		"document": []any{result.Document},
+	docs := make([]any, 0, len(result.Documents))
+	for _, d := range result.Documents {
+		d["id"] = uuid.New().String()
+		d["file"] = result.FilePath
+		docs = append(docs, d)
 	}
+	input := map[string]any{"document": docs}
 
-	// Step 4: Load Rego files
 	policyData, err := os.ReadFile(policyPath)
 	require.NoError(t, err)
 	crossplaneLib, err := os.ReadFile("../rego/crossplane.rego")
@@ -228,7 +235,6 @@ func evalCrossplanePolicy(t *testing.T, yamlPath, policyPath string) []any {
 	rs, err := r.Eval(context.Background())
 	require.NoError(t, err)
 
-	// Step 5: Collect findings from result set
 	var findings []any
 	for _, result := range rs {
 		for _, expr := range result.Expressions {
@@ -237,8 +243,25 @@ func evalCrossplanePolicy(t *testing.T, yamlPath, policyPath string) []any {
 			}
 		}
 	}
-
 	return findings
+}
+
+// indexByName returns a map keyed by metadata.name for quick lookup in tests.
+func indexByName(t *testing.T, docs []Document) map[string]Document {
+	t.Helper()
+	out := make(map[string]Document, len(docs))
+	for _, d := range docs {
+		md, ok := d["metadata"].(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := md["name"].(string)
+		if name == "" {
+			continue
+		}
+		out[name] = d
+	}
+	return out
 }
 
 // assertWizPolicyFields validates that a finding contains all required fields
@@ -249,8 +272,6 @@ func assertWizPolicyFields(t *testing.T, finding map[string]any) {
 		_, ok := finding[field]
 		assert.True(t, ok, "WizPolicy result missing required field '%s': %v", field, finding)
 	}
-
-	// searchLine should be an array (used for line detection)
 	if sl, ok := finding["searchLine"]; ok {
 		_, isArr := sl.([]any)
 		assert.True(t, isArr, "searchLine should be an array, got %T", sl)

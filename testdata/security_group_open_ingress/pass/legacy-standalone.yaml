@@ -1,0 +1,18 @@
+# Standalone SecurityGroup — ingress restricted to private CIDR (pass)
+apiVersion: ec2.aws.crossplane.io/v1beta1
+kind: SecurityGroup
+metadata:
+  name: db-security-group
+spec:
+  forProvider:
+    region: us-east-1
+    groupName: db-sg
+    description: Enable rds access from private subnets only
+    ingress:
+      - fromPort: 5432
+        toPort: 5432
+        ipProtocol: tcp
+        ipRanges:
+          - cidrIp: 10.0.0.0/8
+  providerConfigRef:
+    name: example

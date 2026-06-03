@@ -22,7 +22,7 @@ spec:
             engine: postgres
             engineVersion: "13.7"
             region: us-east-1
-            storageEncrypted: false
+            storageEncrypted: true
             publiclyAccessible: false
             storageType: gp3
       patches:

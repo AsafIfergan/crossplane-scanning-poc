@@ -1,0 +1,40 @@
+# Traditional Composition with nested resources — FAIL case
+# The composed RDSInstance has storageEncrypted: false → rds_not_encrypted policy should flag it.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: rds-cluster-aws
+spec:
+  compositeTypeRef:
+    apiVersion: database.example.org/v1alpha1
+    kind: CompositePostgreSQLInstance
+  resources:
+    - name: rds-instance
+      base:
+        apiVersion: database.aws.crossplane.io/v1beta1
+        kind: RDSInstance
+        metadata:
+          name: composed-rds
+        spec:
+          forProvider:
+            allocatedStorage: 100
+            dbInstanceClass: db.r5.large
+            engine: postgres
+            engineVersion: "13.7"
+            region: us-east-1
+            storageEncrypted: false
+            publiclyAccessible: false
+            storageType: gp3
+      patches:
+        - fromFieldPath: spec.parameters.storageGB
+          toFieldPath: spec.forProvider.allocatedStorage
+    - name: db-subnet-group
+      base:
+        apiVersion: database.aws.crossplane.io/v1beta1
+        kind: DBSubnetGroup
+        metadata:
+          name: composed-subnet-group
+        spec:
+          forProvider:
+            region: us-east-1
+            description: Subnet group for RDS

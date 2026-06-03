@@ -1,0 +1,18 @@
+# Upbound provider — modern provider format (upbound.io instead of crossplane.io).
+# Used by TestParseUpbound to verify the parser handles upbound.io apiVersions.
+apiVersion: rds.aws.upbound.io/v1beta3
+kind: Instance
+metadata:
+  name: upbound-rds
+spec:
+  forProvider:
+    allocatedStorage: 50
+    instanceClass: db.t3.medium
+    engine: mysql
+    engineVersion: "5.7"
+    region: us-west-2
+    storageEncrypted: false
+    storageType: gp2
+    skipFinalSnapshot: true
+  providerConfigRef:
+    name: default

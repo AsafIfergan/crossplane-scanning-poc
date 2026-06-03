@@ -1,0 +1,14 @@
+# Upbound provider-aws-ec2 — Subnet referencing a VPC that is not defined anywhere (fail).
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: Subnet
+metadata:
+  name: upbound-orphan-subnet
+spec:
+  forProvider:
+    region: us-east-1
+    availabilityZone: us-east-1b
+    cidrBlock: 10.0.1.0/24
+    vpcIdRef:
+      name: nonexistent-upbound-vpc
+  providerConfigRef:
+    name: default

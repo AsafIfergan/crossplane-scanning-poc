@@ -3,38 +3,78 @@ package wiz
 import data.generic.common as common_lib
 import data.generic.crossplane as cp_lib
 
-WizPolicy[result] {
-	document := input.document[i]
-	resource := document.resource.RDSInstance[name]
+# --- Legacy crossplane-contrib/provider-aws: RDSInstance ---------------------
 
-	not common_lib.valid_key(resource.spec.forProvider, "storageEncrypted")
+WizPolicy[result] {
+	r := cp_lib.managedResourcesOf("RDSInstance")[_]
+	cp_lib.isAWSLegacy(r.resource)
+	spec := cp_lib.mergedSpec(r.resource)
+	not common_lib.valid_key(spec, "storageEncrypted")
 
 	result := {
-		"documentId": document.id,
+		"documentId": r.doc.id,
 		"resourceType": "RDSInstance",
-		"resourceName": cp_lib.getResourceName(resource, name),
-		"searchKey": sprintf("resource.RDSInstance[%s].spec.forProvider", [name]),
+		"resourceName": r.name,
+		"searchKey": sprintf("RDSInstance[%s].spec.forProvider", [r.name]),
 		"issueType": "MissingAttribute",
 		"keyExpectedValue": "storageEncrypted should be defined and set to true",
 		"keyActualValue": "storageEncrypted is not defined",
-		"searchLine": common_lib.build_search_line(["resource", "RDSInstance", name, "spec", "forProvider"], []),
+		"searchLine": common_lib.build_search_line(r.searchPath, ["spec", "forProvider"]),
 	}
 }
 
 WizPolicy[result] {
-	document := input.document[i]
-	resource := document.resource.RDSInstance[name]
-
-	resource.spec.forProvider.storageEncrypted == false
+	r := cp_lib.managedResourcesOf("RDSInstance")[_]
+	cp_lib.isAWSLegacy(r.resource)
+	spec := cp_lib.mergedSpec(r.resource)
+	spec.storageEncrypted == false
 
 	result := {
-		"documentId": document.id,
+		"documentId": r.doc.id,
 		"resourceType": "RDSInstance",
-		"resourceName": cp_lib.getResourceName(resource, name),
-		"searchKey": sprintf("resource.RDSInstance[%s].spec.forProvider.storageEncrypted", [name]),
+		"resourceName": r.name,
+		"searchKey": sprintf("RDSInstance[%s].spec.forProvider.storageEncrypted", [r.name]),
 		"issueType": "IncorrectValue",
 		"keyExpectedValue": "storageEncrypted should be set to true",
 		"keyActualValue": "storageEncrypted is set to false",
-		"searchLine": common_lib.build_search_line(["resource", "RDSInstance", name, "spec", "forProvider", "storageEncrypted"], []),
+		"searchLine": common_lib.build_search_line(r.searchPath, ["spec", "forProvider", "storageEncrypted"]),
+	}
+}
+
+# --- Upbound provider-aws-rds: Instance --------------------------------------
+
+WizPolicy[result] {
+	r := cp_lib.managedResourcesOf("Instance")[_]
+	cp_lib.isAWSUpboundRDS(r.resource)
+	spec := cp_lib.mergedSpec(r.resource)
+	not common_lib.valid_key(spec, "storageEncrypted")
+
+	result := {
+		"documentId": r.doc.id,
+		"resourceType": "Instance",
+		"resourceName": r.name,
+		"searchKey": sprintf("Instance[%s].spec.forProvider", [r.name]),
+		"issueType": "MissingAttribute",
+		"keyExpectedValue": "storageEncrypted should be defined and set to true",
+		"keyActualValue": "storageEncrypted is not defined",
+		"searchLine": common_lib.build_search_line(r.searchPath, ["spec", "forProvider"]),
+	}
+}
+
+WizPolicy[result] {
+	r := cp_lib.managedResourcesOf("Instance")[_]
+	cp_lib.isAWSUpboundRDS(r.resource)
+	spec := cp_lib.mergedSpec(r.resource)
+	spec.storageEncrypted == false
+
+	result := {
+		"documentId": r.doc.id,
+		"resourceType": "Instance",
+		"resourceName": r.name,
+		"searchKey": sprintf("Instance[%s].spec.forProvider.storageEncrypted", [r.name]),
+		"issueType": "IncorrectValue",
+		"keyExpectedValue": "storageEncrypted should be set to true",
+		"keyActualValue": "storageEncrypted is set to false",
+		"searchLine": common_lib.build_search_line(r.searchPath, ["spec", "forProvider", "storageEncrypted"]),
 	}
 }

@@ -1,0 +1,18 @@
+# Standalone SecurityGroup — ingress open to 0.0.0.0/0 (fail)
+apiVersion: ec2.aws.crossplane.io/v1beta1
+kind: SecurityGroup
+metadata:
+  name: sample-cluster-sg
+spec:
+  forProvider:
+    region: us-east-1
+    groupName: my-cool-ekscluster-sg
+    description: Cluster communication with worker nodes
+    ingress:
+      - fromPort: 80
+        toPort: 80
+        ipProtocol: tcp
+        ipRanges:
+          - cidrIp: 0.0.0.0/0
+  providerConfigRef:
+    name: example
