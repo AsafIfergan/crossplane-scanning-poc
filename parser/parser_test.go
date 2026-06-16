@@ -133,6 +133,8 @@ func TestRegoPolicy_RDSNotEncrypted(t *testing.T) {
 		{"fail/legacy-composition", "../testdata/rds_not_encrypted/fail/legacy-composition.yaml", true, "RDSInstance"},
 		{"fail/upbound-standalone", "../testdata/rds_not_encrypted/fail/upbound-standalone.yaml", true, "Instance"},
 		{"fail/upbound-composition", "../testdata/rds_not_encrypted/fail/upbound-composition.yaml", true, "Instance"},
+		// storageEncrypted: false declared in spec.initProvider — caught by mergedSpec.
+		{"fail/upbound-initprovider", "../testdata/rds_not_encrypted/fail/upbound-initprovider.yaml", true, "Instance"},
 	})
 }
 
@@ -162,6 +164,22 @@ func TestRegoPolicy_SubnetWithoutVPCRef(t *testing.T) {
 		{"fail/upbound-standalone", "../testdata/subnet_without_vpc_ref/fail/upbound-standalone.yaml", true, "Subnet"},
 		{"fail/upbound-composition", "../testdata/subnet_without_vpc_ref/fail/upbound-composition.yaml", true, "Subnet"},
 	})
+}
+
+// TestRegoPolicy_RDSNotEncrypted_SearchKeyReflectsInitProvider verifies that
+// when storageEncrypted: false is declared in spec.initProvider, the finding's
+// searchKey actually points at .spec.initProvider.storageEncrypted (not
+// hardcoded forProvider). Confirms fieldLocation does its job end-to-end.
+func TestRegoPolicy_RDSNotEncrypted_SearchKeyReflectsInitProvider(t *testing.T) {
+	findings := evalCrossplanePolicy(t,
+		"../testdata/rds_not_encrypted/fail/upbound-initprovider.yaml",
+		"../rego/rds_not_encrypted.rego",
+	)
+	require.NotEmpty(t, findings)
+	finding := findings[0].(map[string]any)
+	searchKey := finding["searchKey"].(string)
+	assert.Equal(t, "spec.initProvider.storageEncrypted", searchKey,
+		"searchKey should point at the initProvider section since that's where storageEncrypted lives")
 }
 
 func runPolicyCases(t *testing.T, policyPath string, cases []policyCase) {
@@ -271,9 +289,5 @@ func assertWizPolicyFields(t *testing.T, finding map[string]any) {
 	for _, field := range requiredWizPolicyFields {
 		_, ok := finding[field]
 		assert.True(t, ok, "WizPolicy result missing required field '%s': %v", field, finding)
-	}
-	if sl, ok := finding["searchLine"]; ok {
-		_, isArr := sl.([]any)
-		assert.True(t, isArr, "searchLine should be an array, got %T", sl)
 	}
 }

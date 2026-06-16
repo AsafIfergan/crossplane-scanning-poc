@@ -1,0 +1,21 @@
+# Upbound provider-aws-rds — storageEncrypted: false declared in spec.initProvider.
+# initProvider fields are merged into the resource at creation, so this DB will
+# be born unencrypted even though spec.forProvider doesn't say so.
+# The rule should still flag it via mergedSpec.
+apiVersion: rds.aws.upbound.io/v1beta3
+kind: Instance
+metadata:
+  name: upbound-rds-initprovider-unenc
+spec:
+  forProvider:
+    region: us-west-2
+    instanceClass: db.t3.medium
+    engine: mysql
+    engineVersion: "5.7"
+    storageType: gp2
+    skipFinalSnapshot: true
+  initProvider:
+    allocatedStorage: 50
+    storageEncrypted: false
+  providerConfigRef:
+    name: default

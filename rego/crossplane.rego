@@ -7,6 +7,7 @@ getResourceName(resource) = name {
 	name := resource.metadata.name
 }
 
+# get_resource_tags returns labels (preferred) or annotations as a map of tags.
 get_resource_tags(resource) = tags {
 	tags = resource.metadata.labels
 	is_object(tags)
@@ -33,86 +34,26 @@ associatedBySelector(resource, selectorField, targetResource) {
 	targetResource.metadata.labels[key] == label
 }
 
-# --- Provider-family detection -----------------------------------------------
-# Operate on the MANAGED RESOURCE (cr.base for composed, the doc itself for
-# standalone) — NOT on the Composition wrapper, whose apiVersion is always
-# apiextensions.crossplane.io/v1.
-
-isAWSLegacy(resource) {
-	contains(resource.apiVersion, ".aws.crossplane.io/")
-}
-
-isAWSUpbound(resource) {
-	contains(resource.apiVersion, ".aws.upbound.io/")
-}
-
-# Convenience: matches either AWS provider family.
-isAWS(resource) {
-	isAWSLegacy(resource)
-}
-
-isAWS(resource) {
-	isAWSUpbound(resource)
-}
-
-# Sub-family helpers — needed when a kind name is ambiguous across Upbound
-# services (e.g. "Instance" exists in both rds.aws.upbound.io and ec2.aws.upbound.io).
-isAWSUpboundRDS(resource) {
-	startswith(resource.apiVersion, "rds.aws.upbound.io/")
-}
-
-isAWSUpboundEC2(resource) {
-	startswith(resource.apiVersion, "ec2.aws.upbound.io/")
-}
-
-# --- Spec accessor -----------------------------------------------------------
-
-# mergedSpec returns forProvider ∪ initProvider so rules don't care where the
-# field was declared. forProvider wins on conflict. Legacy resources have no
-# initProvider; the merge falls through to plain forProvider.
+# mergedSpec returns forProvider ∪ initProvider so rules don't care which
+# section a field was declared in. Upbound providers mirror fields between
+# the two; forProvider wins on conflict. Legacy providers have no initProvider,
+# in which case the merge falls through to plain forProvider.
 mergedSpec(resource) = merged {
 	fp := object.get(resource.spec, "forProvider", {})
 	ip := object.get(resource.spec, "initProvider", {})
 	merged := object.union(ip, fp)
 }
 
-# --- Resource iteration ------------------------------------------------------
-
-# managedResourcesOf yields every resource of the given kind, whether declared
-# standalone or nested inside a Composition's spec.resources[].base.
-#
-# Each result has:
-#   doc        — the input.document[] entry that contains this resource
-#   resource   — the managed-resource payload (with kind/metadata/spec)
-#   name       — resource.metadata.name
-#   searchPath — path prefix in the input, for build_search_line
-managedResourcesOf(kind) = results {
-	standalone := {r |
-		doc := input.document[i]
-		doc.kind == kind
-		r := {
-			"doc": doc,
-			"resource": doc,
-			"name": doc.metadata.name,
-			"searchPath": ["document", i],
-		}
-	}
-	composed := {r |
-		doc := input.document[i]
-		doc.kind == "Composition"
-		cr := doc.spec.resources[j]
-		cr.base.kind == kind
-		r := {
-			"doc": doc,
-			"resource": cr.base,
-			"name": cr.base.metadata.name,
-			"searchPath": ["document", i, "spec", "resources", j, "base"],
-		}
-	}
-	results := standalone | composed
+# fieldLocation returns the spec section ("forProvider" or "initProvider") where
+# the given field is declared. Used to build accurate JSON-path searchKey values
+# pointing at the exact location of a misconfiguration in the source YAML.
+# Defaults to "forProvider" when the field is missing from both — that's the
+# canonical place to add it.
+fieldLocation(resource, field) = "forProvider" {
+	common_lib.valid_key(resource.spec.forProvider, field)
+} else = "initProvider" {
+	common_lib.valid_key(resource.spec.initProvider, field)
+} else = "forProvider" {
+	true
 }
 
-# resourceExists is true when any resource of the given kind has the given name.
-resourceExists(kind, name) {
-	managedResourcesOf(kind)[_].name == name
-}
