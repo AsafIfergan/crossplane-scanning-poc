@@ -59,7 +59,7 @@ fieldLocation(resource, field) = "forProvider" {
 
 # walkPrefix converts a walk() path into a string prefix safe to splice into a
 # searchKey, with a trailing dot when non-empty. Internal helper — rule code
-# should use getPath / sectionPath instead.
+# should use getPath instead.
 #
 # Walk paths that yield a Crossplane managed resource:
 #   []                                  → standalone (walk yielded the doc itself)
@@ -98,20 +98,14 @@ pathSeg(p) = sprintf("[%d]", [p]) {
 #   section := cp_lib.fieldLocation(value, "ingress")
 #   "searchKey": cp_lib.getPath(path, section, sprintf("ingress[%d].ipRanges[%d].cidrIp", [i, j]))
 #
-# Empty rest is handled defensively — drops the trailing dot that the
-# "%s.%s" format would otherwise leave behind. Equivalent to sectionPath.
+# MissingAttribute case — pass "" for rest to get `<walkPrefix>spec.<section>`
+# (no field appended). The searchKey lands on the section that should contain
+# the missing field; the scanner's line resolver then highlights the
+# `forProvider:` (or `initProvider:`) line.
+#
+#   "searchKey": cp_lib.getPath(path, section, "")
 getPath(walkPath, section, rest) = sprintf("%sspec.%s.%s", [walkPrefix(walkPath), section, rest]) {
 	rest != ""
-} else = sectionPath(walkPath, section) {
+} else = sprintf("%sspec.%s", [walkPrefix(walkPath), section]) {
 	true
 }
-
-# sectionPath points at `<walkPrefix>spec.<section>` with no field appended.
-# Use this for MissingAttribute findings — the field doesn't exist, so the
-# searchKey lands on the section that should contain it. The scanner's line
-# resolver then highlights the `forProvider:` (or `initProvider:`) line so
-# the user can see where to add the missing field.
-#
-# Usage:
-#   "searchKey": cp_lib.sectionPath(path, section)
-sectionPath(walkPath, section) = sprintf("%sspec.%s", [walkPrefix(walkPath), section])
