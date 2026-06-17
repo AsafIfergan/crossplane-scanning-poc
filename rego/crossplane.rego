@@ -103,4 +103,21 @@ pathSeg(p) = sprintf("[%d]", [p]) {
 # Nested example:
 #   section := cp_lib.fieldLocation(value, "ingress")
 #   "searchKey": cp_lib.specPath(path, section, sprintf("ingress[%d].ipRanges[%d].cidrIp", [i, j]))
-specPath(walkPath, section, rest) = sprintf("%sspec.%s.%s", [getPath(walkPath), section, rest])
+#
+# Empty rest is handled defensively — drops the trailing dot that the
+# "%s.%s" format would otherwise leave behind. Equivalent to sectionPath.
+specPath(walkPath, section, rest) = sprintf("%sspec.%s.%s", [getPath(walkPath), section, rest]) {
+	rest != ""
+} else = sectionPath(walkPath, section) {
+	true
+}
+
+# sectionPath points at `<walkPrefix>spec.<section>` with no field appended.
+# Use this for MissingAttribute findings — the field doesn't exist, so the
+# searchKey lands on the section that should contain it. The scanner's line
+# resolver then highlights the `forProvider:` (or `initProvider:`) line so
+# the user can see where to add the missing field.
+#
+# Usage:
+#   "searchKey": cp_lib.sectionPath(path, section)
+sectionPath(walkPath, section) = sprintf("%sspec.%s", [getPath(walkPath), section])
