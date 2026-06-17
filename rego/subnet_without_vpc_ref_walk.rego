@@ -25,7 +25,7 @@ WizPolicy[result] {
 		"documentId": doc.id,
 		"resourceType": "Subnet",
 		"resourceName": value.metadata.name,
-		"searchKey": sprintf("%sspec.%s.vpcIdRef.name", [cp_lib.getPath(path), section]),
+		"searchKey": cp_lib.specPath(path, section, "vpcIdRef.name"),
 		"issueType": "IncorrectValue",
 		"keyExpectedValue": sprintf("referenced VPC '%s' should exist in the same file", [vpcRefName]),
 		"keyActualValue": sprintf("referenced VPC '%s' is not defined in the same file", [vpcRefName]),

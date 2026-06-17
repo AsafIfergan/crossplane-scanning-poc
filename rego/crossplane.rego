@@ -88,3 +88,19 @@ pathSeg(p) = sprintf(".%s", [p]) {
 pathSeg(p) = sprintf("[%d]", [p]) {
 	is_number(p)
 }
+
+# specPath assembles a complete searchKey of the form
+# `<walkPrefix>spec.<section>.<rest>`. The walk prefix comes from getPath
+# (empty for standalone, "spec.resources[j].base." for composed). The
+# section is the spec subdivision the caller resolved via fieldLocation
+# ("forProvider" or "initProvider"). The rest is the dot-and-bracket path
+# inside the spec section.
+#
+# Usage (canonical rule pattern):
+#   section := cp_lib.fieldLocation(value, "metadataOptions")
+#   "searchKey": cp_lib.specPath(path, section, "metadataOptions")
+#
+# Nested example:
+#   section := cp_lib.fieldLocation(value, "ingress")
+#   "searchKey": cp_lib.specPath(path, section, sprintf("ingress[%d].ipRanges[%d].cidrIp", [i, j]))
+specPath(walkPath, section, rest) = sprintf("%sspec.%s.%s", [getPath(walkPath), section, rest])
