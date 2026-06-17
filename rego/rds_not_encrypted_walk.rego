@@ -23,7 +23,7 @@ WizPolicy[result] {
 		"documentId": doc.id,
 		"resourceType": value.kind,
 		"resourceName": value.metadata.name,
-		"searchKey": cp_lib.specPath(path, section, "storageEncrypted"),
+		"searchKey": cp_lib.getPath(path, section, "storageEncrypted"),
 		"issueType": rdsIssueType(spec),
 		"keyExpectedValue": "storageEncrypted should be defined and set to true",
 		"keyActualValue": rdsActualValue(spec),

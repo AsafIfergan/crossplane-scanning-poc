@@ -57,30 +57,24 @@ fieldLocation(resource, field) = "forProvider" {
 	true
 }
 
-# getPath converts a walk() path into a string prefix safe to splice into a
-# searchKey, with a trailing dot when non-empty. Used to collapse the per-rule
-# standalone+composed block duplication into a single WizPolicy block that
-# walks the document and matches resources at any valid depth.
+# walkPrefix converts a walk() path into a string prefix safe to splice into a
+# searchKey, with a trailing dot when non-empty. Internal helper — rule code
+# should use getPath / sectionPath instead.
 #
 # Walk paths that yield a Crossplane managed resource:
 #   []                                  → standalone (walk yielded the doc itself)
-#                                         getPath returns ""
+#                                         walkPrefix returns ""
 #   ["spec", "resources", j, "base"]    → composed (resource under Composition)
-#                                         getPath returns "spec.resources[<j>].base."
-#
-# Usage in a rule:
-#   walk(doc, [path, value])
-#   isAWSMyResource(value)                # variant predicate is the load-bearing filter
-#   "searchKey": sprintf("%sspec.%s.<field>", [cp_lib.getPath(path), section])
-getPath(path) = sprintf("%s.", [pathStr]) {
-	count(path) > 0
-	pathStr := trim_prefix(concat("", [s | p := path[_]; s := pathSeg(p)]), ".")
+#                                         walkPrefix returns "spec.resources[<j>].base."
+walkPrefix(walkPath) = sprintf("%s.", [pathStr]) {
+	count(walkPath) > 0
+	pathStr := trim_prefix(concat("", [s | p := walkPath[_]; s := pathSeg(p)]), ".")
 } else = "" {
 	true
 }
 
 # pathSeg formats one element of a walk path: ".name" for strings, "[N]" for
-# array indices. Concat'ing them produces ".spec.resources[0].base"; getPath
+# array indices. Concat'ing them produces ".spec.resources[0].base"; walkPrefix
 # trims the leading dot and adds a trailing one.
 pathSeg(p) = sprintf(".%s", [p]) {
 	is_string(p)
@@ -89,8 +83,8 @@ pathSeg(p) = sprintf("[%d]", [p]) {
 	is_number(p)
 }
 
-# specPath assembles a complete searchKey of the form
-# `<walkPrefix>spec.<section>.<rest>`. The walk prefix comes from getPath
+# getPath assembles a complete searchKey of the form
+# `<walkPrefix>spec.<section>.<rest>`. The walk prefix comes from walkPrefix
 # (empty for standalone, "spec.resources[j].base." for composed). The
 # section is the spec subdivision the caller resolved via fieldLocation
 # ("forProvider" or "initProvider"). The rest is the dot-and-bracket path
@@ -98,15 +92,15 @@ pathSeg(p) = sprintf("[%d]", [p]) {
 #
 # Usage (canonical rule pattern):
 #   section := cp_lib.fieldLocation(value, "metadataOptions")
-#   "searchKey": cp_lib.specPath(path, section, "metadataOptions")
+#   "searchKey": cp_lib.getPath(path, section, "metadataOptions")
 #
 # Nested example:
 #   section := cp_lib.fieldLocation(value, "ingress")
-#   "searchKey": cp_lib.specPath(path, section, sprintf("ingress[%d].ipRanges[%d].cidrIp", [i, j]))
+#   "searchKey": cp_lib.getPath(path, section, sprintf("ingress[%d].ipRanges[%d].cidrIp", [i, j]))
 #
 # Empty rest is handled defensively — drops the trailing dot that the
 # "%s.%s" format would otherwise leave behind. Equivalent to sectionPath.
-specPath(walkPath, section, rest) = sprintf("%sspec.%s.%s", [getPath(walkPath), section, rest]) {
+getPath(walkPath, section, rest) = sprintf("%sspec.%s.%s", [walkPrefix(walkPath), section, rest]) {
 	rest != ""
 } else = sectionPath(walkPath, section) {
 	true
@@ -120,4 +114,4 @@ specPath(walkPath, section, rest) = sprintf("%sspec.%s.%s", [getPath(walkPath), 
 #
 # Usage:
 #   "searchKey": cp_lib.sectionPath(path, section)
-sectionPath(walkPath, section) = sprintf("%sspec.%s", [getPath(walkPath), section])
+sectionPath(walkPath, section) = sprintf("%sspec.%s", [walkPrefix(walkPath), section])
