@@ -109,3 +109,53 @@ getPath(walkPath, section, rest) = sprintf("%sspec.%s.%s", [walkPrefix(walkPath)
 } else = sprintf("%sspec.%s", [walkPrefix(walkPath), section]) {
 	true
 }
+
+# getResources returns a list of every Crossplane managed resource inside
+# the given document — the doc itself if standalone, or each
+# spec.resources[].base entry if doc is a Composition. Returns a single-element
+# list for standalone docs, N elements for a Composition with N resources, []
+# for an empty Composition. Iterate the returned list with [_] in the rule body.
+#
+# Each entry bundles:
+#   resource    - the managed resource (has spec.forProvider, metadata.name, etc.)
+#   walkPath    - path prefix passed to getPath / walkPrefix to build the right
+#                 searchKey for standalone ([]) vs composed (["spec", "resources",
+#                 j, "base"]) shapes
+#
+# documentId is NOT bundled because the rule body already binds `doc` from the
+# outer iteration — use `doc.id` directly for the result's documentId field.
+#
+# Implemented as a function returning a list (not a partial rule) so the rule
+# body can keep its explicit `doc := input.document[i]` iteration — the helper
+# operates per-doc and the rule controls which doc(s) to evaluate.
+#
+# Usage in a rule (replaces the walk + variant-predicate pattern):
+#   doc := input.document[i]
+#   mr := cp_lib.getResources(doc)[_]
+#   isAWSMyResource(mr.resource)
+#   spec := cp_lib.mergedSpec(mr.resource)
+#   ...
+#   "documentId": doc.id,
+#   "resourceType": mr.resource.kind,
+#   "resourceName": mr.resource.metadata.name,
+#   "searchKey": cp_lib.getPath(mr.walkPath, section, "fieldName"),
+getResources(doc) = mrs {
+	# Standalone — the doc IS the managed resource. The variant predicate in the
+	# rule body filters out docs that aren't Crossplane managed resources.
+	not doc.kind == "Composition"
+	mrs := [{
+		"resource": doc,
+		"walkPath": [],
+	}]
+} else = mrs {
+	# Composed — walk into Composition.spec.resources[j].base. The comprehension
+	# binds one mr per resource entry; N resources produces N elements.
+	doc.kind == "Composition"
+	mrs := [mr |
+		base := doc.spec.resources[j].base
+		mr := {
+			"resource": base,
+			"walkPath": ["spec", "resources", j, "base"],
+		}
+	]
+}
