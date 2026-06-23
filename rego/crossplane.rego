@@ -2,21 +2,19 @@ package generic.crossplane
 
 import data.generic.common as common_lib
 
-# mergedSpec returns forProvider ∪ initProvider so rules don't care which
-# section a field was declared in. Upbound providers mirror fields between
-# the two; forProvider wins on conflict. Legacy providers have no initProvider,
-# in which case the merge falls through to plain forProvider.
+# Returns forProvider ∪ initProvider with forProvider winning on conflict.
+# Upbound resources can declare the same field in either section; legacy
+# providers only have forProvider, in which case the merge is a no-op.
 mergedSpec(resource) = merged {
 	fp := object.get(resource.spec, "forProvider", {})
 	ip := object.get(resource.spec, "initProvider", {})
 	merged := object.union(ip, fp)
 }
 
-# fieldLocation returns the spec section ("forProvider" or "initProvider") where
-# the given field is declared. Used to build accurate JSON-path searchKey values
-# pointing at the exact location of a misconfiguration in the source YAML.
-# Defaults to "forProvider" when the field is missing from both — that's the
-# canonical place to add it.
+# Returns the spec section where `field` is declared ("forProvider" or
+# "initProvider"). Defaults to "forProvider" when missing from both — the
+# canonical place to add it, so MissingAttribute findings point at the right
+# section for remediation.
 fieldLocation(resource, field) = "forProvider" {
 	common_lib.valid_key(resource.spec.forProvider, field)
 } else = "initProvider" {
@@ -25,15 +23,8 @@ fieldLocation(resource, field) = "forProvider" {
 	true
 }
 
-# walkPrefix converts a walk() path into a string prefix safe to splice into a
-# searchKey, with a trailing dot when non-empty. Internal helper — rule code
-# should use getPath instead.
-#
-# Walk paths that yield a Crossplane managed resource:
-#   []                                  → standalone (walk yielded the doc itself)
-#                                         walkPrefix returns ""
-#   ["spec", "resources", j, "base"]    → composed (resource under Composition)
-#                                         walkPrefix returns "spec.resources[<j>].base."
+# Internal: converts a walk-style path to a string prefix with trailing dot
+# when non-empty. Used by getPath. Rule code should call getPath, not this.
 walkPrefix(walkPath) = sprintf("%s.", [pathStr]) {
 	count(walkPath) > 0
 	pathStr := trim_prefix(concat("", [s | p := walkPath[_]; s := pathSeg(p)]), ".")
@@ -41,9 +32,9 @@ walkPrefix(walkPath) = sprintf("%s.", [pathStr]) {
 	true
 }
 
-# pathSeg formats one element of a walk path: ".name" for strings, "[N]" for
-# array indices. Concat'ing them produces ".spec.resources[0].base"; walkPrefix
-# trims the leading dot and adds a trailing one.
+# Internal: per-element type dispatch for walkPrefix. Strings produce ".name";
+# integers produce "[N]". Comprehensions can't do this inline (no if/else),
+# so this needs to be a function.
 pathSeg(p) = sprintf(".%s", [p]) {
 	is_string(p)
 }
@@ -51,79 +42,32 @@ pathSeg(p) = sprintf("[%d]", [p]) {
 	is_number(p)
 }
 
-# getPath assembles a complete searchKey of the form
-# `<walkPrefix>spec.<section>.<rest>`. The walk prefix comes from walkPrefix
-# (empty for standalone, "spec.resources[j].base." for composed). The
-# section is the spec subdivision the caller resolved via fieldLocation
-# ("forProvider" or "initProvider"). The rest is the dot-and-bracket path
-# inside the spec section.
-#
-# Usage (canonical rule pattern):
-#   section := cp_lib.fieldLocation(value, "metadataOptions")
-#   "searchKey": cp_lib.getPath(path, section, "metadataOptions")
-#
-# Nested example:
-#   section := cp_lib.fieldLocation(value, "ingress")
-#   "searchKey": cp_lib.getPath(path, section, sprintf("ingress[%d].ipRanges[%d].cidrIp", [i, j]))
-#
-# MissingAttribute case — pass "" for rest to get `<walkPrefix>spec.<section>`
-# (no field appended). The searchKey lands on the section that should contain
-# the missing field; the scanner's line resolver then highlights the
-# `forProvider:` (or `initProvider:`) line.
-#
-#   "searchKey": cp_lib.getPath(path, section, "")
+# Builds a searchKey of the form `<walkPrefix>spec.<section>.<rest>`.
+# Pass empty `rest` for MissingAttribute findings — the result drops the
+# trailing dot, landing the searchKey on the section that should contain
+# the missing field.
 getPath(walkPath, section, rest) = sprintf("%sspec.%s.%s", [walkPrefix(walkPath), section, rest]) {
 	rest != ""
 } else = sprintf("%sspec.%s", [walkPrefix(walkPath), section]) {
 	true
 }
 
-# getResources returns a list of every Crossplane managed resource inside
-# the given document — the doc itself if standalone, or each
-# spec.resources[].base entry if doc is a Composition. Returns a single-element
-# list for standalone docs, N elements for a Composition with N resources, []
-# for an empty Composition. Iterate the returned list with [_] in the rule body.
+# Returns the list of Crossplane managed resources in `doc`: one entry for a
+# standalone doc, N entries for a Composition with N entries under
+# spec.resources[].base, [] for an empty Composition. Each entry is
+# `{resource, walkPath}`; rules read documentId from the outer `doc.id`
+# directly.
 #
-# Each entry bundles:
-#   resource    - the managed resource (has spec.forProvider, metadata.name, etc.)
-#   walkPath    - path prefix passed to getPath / walkPrefix to build the right
-#                 searchKey for standalone ([]) vs composed (["spec", "resources",
-#                 j, "base"]) shapes
-#
-# documentId is NOT bundled because the rule body already binds `doc` from the
-# outer iteration — use `doc.id` directly for the result's documentId field.
-#
-# Implemented as a function returning a list (not a partial rule) so the rule
-# body can keep its explicit `doc := input.document[i]` iteration — the helper
-# operates per-doc and the rule controls which doc(s) to evaluate.
-#
-# Usage in a rule (replaces the walk + variant-predicate pattern):
-#   doc := input.document[i]
-#   mr := cp_lib.getResources(doc)[_]
-#   isAWSMyResource(mr.resource)
-#   spec := cp_lib.mergedSpec(mr.resource)
-#   ...
-#   "documentId": doc.id,
-#   "resourceType": mr.resource.kind,
-#   "resourceName": mr.resource.metadata.name,
-#   "searchKey": cp_lib.getPath(mr.walkPath, section, "fieldName"),
+# Implemented as a function returning a list (not a partial rule) so callers
+# keep the explicit `doc := input.document[i]` iteration — the helper operates
+# per-doc and the rule chooses which docs to evaluate.
 getResources(doc) = mrs {
-	# Standalone — the doc IS the managed resource. The variant predicate in the
-	# rule body filters out docs that aren't Crossplane managed resources.
 	not doc.kind == "Composition"
-	mrs := [{
-		"resource": doc,
-		"walkPath": [],
-	}]
+	mrs := [{"resource": doc, "walkPath": []}]
 } else = mrs {
-	# Composed — walk into Composition.spec.resources[j].base. The comprehension
-	# binds one mr per resource entry; N resources produces N elements.
 	doc.kind == "Composition"
 	mrs := [mr |
 		base := doc.spec.resources[j].base
-		mr := {
-			"resource": base,
-			"walkPath": ["spec", "resources", j, "base"],
-		}
+		mr := {"resource": base, "walkPath": ["spec", "resources", j, "base"]}
 	]
 }
